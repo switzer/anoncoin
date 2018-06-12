@@ -22,7 +22,9 @@ Open the Terminal application from the Utilities folder of the Applications dire
 #### XCode
 Ensure the OSX command line tools are installed:
 
-    xcode-select --install
+```bash
+xcode-select --install
+```
 
 When the popup appears, click `Install`.
 
@@ -39,38 +41,18 @@ Install [Homebrew](https://brew.sh) by running the following command:
 Use Homebrew to install the dependencies on your machine:
 
 ```bash
-brew install automake berkeley-db4 libtool boost miniupnpc openssl pkg-config protobuf python3 qt libevent librsvg
+brew update && brew upgrade
+brew install automake berkeley-db4 boost git libevent librsvg libtool miniupnpc openssl pkg-config protobuf python3 qt
 ```
-
-*NOTE: Building with Qt5 is recommended*
-
-Due to the default C++ compiler changing in new versions of OSX, you will likely need to reinstall Boost from source:
-
-```bash
-brew uninstall boost
-brew install --build-from-source --HEAD boost
-```
-
 
 ## Obtain Source Code
 
-Clone the Anoncoin source code and cd into `anoncoin`
+Clone the Anoncoin source code and move into the `anoncoin` folder:
 
 ```bash
-git clone git@github.com:Anoncoin/anoncoin.git
+git clone https://github.com/Anoncoin/anoncoin.git
 cd anoncoin
 ```
-
-## Install Berkeley DB
-
-It is recommended to use Berkeley DB 4.8. To build it yourself:
-
-```bash
-./contrib/install_db4.sh .
-```
-
-*NOTE: You only need Berkeley DB if the wallet is enabled (see the section `--disable-wallet-mode` below)*
-
 
 ## Build Anoncoin Core
 
@@ -78,23 +60,24 @@ Configure and build the headless Anoncoin binaries as well as the GUI:
 
 #### Set Flags
 
-In order for Anoncoin to find the correct OpenSSL and BDB lib, some flags must be set before compiling:
+Anoncoin needs to be compiled with a newer version of C++ than what is shipped with OSX:
 
 ```bash
-export LDFLAGS=-L/usr/local/opt/openssl/lib
-export CPPFLAGS=-I/usr/local/opt/openssl/include
-export BDB_PREFIX="$(pwd)/db4"
+export CXXFLAGS=-std=c++11
 ```
 
 Note the update to configure if you have Berkeley DB installed:
 
 ```bash
 ./autogen.sh
-./configure --with-qt-incdir=/usr/local/opt/qt/include --with-qt-libdir=/usr/local/opt/qt/lib BDB_LIBS="-L${BDB_PREFIX}/lib -ldb_cxx-4.8" BDB_CFLAGS="-I${BDB_PREFIX}/include"
+./configure
 make
 ```
 
-*NOTE: You can disable the GUI build by passing `--without-gui` to configure.*
+*NOTE: You can pass in the following flags into `configure` if needed:
+* `--without-gui`: disable the GUI
+* `--with-qt-incdir=/usr/local/opt/qt/include`: in case the QT `include` directory is not found
+* `--with-qt-libdir=/usr/local/opt/qt/lib`: in case the QT `library` directory is not found
 
 
 It is recommended to build and run the unit tests:
