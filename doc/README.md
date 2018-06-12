@@ -7,7 +7,6 @@ src/qt/anoncoin-qt -reindex
 src/anoncoind -reindex
 
 
-
 ## Running Anoncoin Core
 
 #### RPC Config
