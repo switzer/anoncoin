@@ -335,7 +335,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
 
         nLastBlockTx = nBlockTx;
         nLastBlockSize = nBlockSize;
-        //LogPrintf("CreateNewBlock(): total size %u\n", nBlockSize);
+        LogPrintf("CreateNewBlock(): total size %u\n", nBlockSize);
 
         // Compute final coinbase transaction.
         txNew.vout[0].nValue = GetBlockValue(nHeight, nFees);
@@ -353,6 +353,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
         //! Force both hash calculations to be updated before validity testing the block
         assert( pblock->GetHash(true) != uint256(0) );
         assert( pblock->CalcSha256dHash(true) != uintFakeHash(0) );
+        assert( pblock->GetGost3411Hash() != uint256(0) );
         CValidationState state;
         if (!TestBlockValidity(state, *pblock, pindexPrev, false, false))
             throw std::runtime_error("CreateNewBlock() : TestBlockValidity failed");
@@ -379,6 +380,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     pblock->vtx[0] = txCoinbase;
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
+
 
 #ifdef ENABLE_WALLET
 //////////////////////////////////////////////////////////////////////////////
@@ -702,7 +704,7 @@ double GetSlowMiningKHPS()
 
 void static AnoncoinMiner(CWallet *pwallet)
 {
-    LogPrintf("%s : v2.0 for Scrypt started with (DDA) Dynamic Difficulty Awareness and (MTHM) Multi-Threaded HashMeter technologies.\n", __func__ );
+    LogPrintf("%s : v3.0 for GOST3411 started with (DDA) Dynamic Difficulty Awareness and (MTHM) Multi-Threaded HashMeter technologies.\n", __func__ );
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
     RenameThread("anoncoin-miner");
 
@@ -771,7 +773,12 @@ void static AnoncoinMiner(CWallet *pwallet)
                 while(true) {
                     // scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), pScratchPadBuffer);
                     //char *pPad = spScratchPad.get();
-                    scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), spScratchPad.get());
+                    if (chainActive.UseGost3411Hash())
+                    {
+                        thash = SerializeGost3411Hash(*pblock, SER_NETWORK, PROTOCOL_VERSION);
+                    } else {
+                        scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), spScratchPad.get());
+                    }
                     nHashesDone++;
                     if( thash <= hashTarget ) {
                         fFound = true;

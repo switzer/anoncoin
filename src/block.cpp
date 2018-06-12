@@ -6,6 +6,7 @@
 
 #include "block.h"
 
+#include "Gost3411.h"
 #include "hash.h"
 #include "scrypt.h"
 #include "tinyformat.h"
@@ -22,6 +23,23 @@ uint256 uintFakeHash::GetRealHash() const
     BlockHashCorrectionMap::iterator mi = mapBlockHashCrossReference.find(*this);
     return (mi != mapBlockHashCrossReference.end()) ? mi->second : uint256(0);
 }
+
+using namespace ::i2p::crypto;
+
+/*uint256 uintGost3411Hash::GetGost3411Hash() const
+{
+    // GOST 34.11-256 (GOST 34.11-512 (...))
+    static unsigned char pblank[1];
+    uint8_t hash1[64];
+    GOSTR3411_2012_512 ((this->begin() == this->end() ? pblank : (unsigned char*)&this->begin()[0]), (this->end() - this->begin()) * sizeof(this->begin()[0]), hash1);
+    //GOSTR3411_2012_512 ((BEGIN(nVersion) == END(nNonce) ? pblank : (unsigned char*)&BEGIN(nVersion)[0]), (END(nNonce) - BEGIN(nVersion)) * sizeof(BEGIN(nVersion)[0]), hash1);
+    uint32_t digest[8];
+    GOSTR3411_2012_256 (hash1, 64, (uint8_t *)digest);
+    // to little endian
+    for (int i = 0; i < 8; i++)
+        gost3411Hash.pn[i] = ByteReverse (digest[7-i]);
+    return gost3411Hash;
+}*/
 
 void uintFakeHash::SetRealHash( const uint256& realHash )
 {
@@ -42,6 +60,11 @@ uintFakeHash CBlockHeader::CalcSha256dHash(const bool fForceUpdate) const
 
 uint256 CBlockHeader::GetHash(const bool fForceUpdate) const
 {
+    /*if (this->nHeight > HARDFORK_BLOCK3)
+    {
+        return GetGost3411Hash();
+    }*/
+    
     if( !fCalcScrypt || fForceUpdate ) {
         uint256 tHash;
         scrypt_1024_1_1_256(BEGIN(nVersion), BEGIN(tHash));
@@ -50,6 +73,14 @@ uint256 CBlockHeader::GetHash(const bool fForceUpdate) const
         fCalcScrypt = true;
     }
     return therealHash;
+}
+
+uint256 CBlockHeader::GetGost3411Hash() const
+{
+    // GOST 34.11-256 (GOST 34.11-512 (...))
+    uint256 tHash;
+    tHash = SerializeGost3411Hash(*this);
+    return tHash;
 }
 
 uint256 CBlock::BuildMerkleTree(bool* fMutated) const
@@ -149,8 +180,9 @@ uint256 CBlock::CheckMerkleBranch(uint256 hash, const std::vector<uint256>& vMer
 std::string CBlock::ToString() const
 {
     std::stringstream s;
-    s << strprintf("CBlock(hash=%s, ver=%d, hashPrevBlock=%s, hashMerkleRoot=%s, nTime=%u, nBits=%08x, nNonce=%u, vtx=%u)\n",
+    s << strprintf("CBlock(hash=%s gost3411=%s, ver=%d, hashPrevBlock=%s, hashMerkleRoot=%s, nTime=%u, nBits=%08x, nNonce=%u, vtx=%u)\n",
         GetHash().ToString(),
+        GetGost3411Hash().ToString(),
         nVersion,
         hashPrevBlock.ToString(),
         hashMerkleRoot.ToString(),
