@@ -15,6 +15,7 @@
 #include "block.h"
 #include "chain.h"
 #include "chainparams.h"
+#include "consensus.h"
 #include "coins.h"
 #include "net.h"
 #include "script.h"
@@ -33,6 +34,8 @@
 #include <vector>
 
 #include <boost/unordered_map.hpp>
+
+using namespace CashIsKing;
 
 class CBlockIndex;
 class CBlockTreeDB;
@@ -211,7 +214,6 @@ std::string GetWarnings(std::string strFor);
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uintFakeHash &hashBlock, bool fAllowSlow = false);
 /** Find the best known block, and make it the tip of the block chain */
 bool ActivateBestChain(CValidationState &state, CBlock *pblock = NULL);
-int64_t GetBlockValue(int nHeight, int64_t nFees);
 
 /** Create a new block index entry for a given block hash */
 CBlockIndex * InsertBlockIndex(uint256 hash);
@@ -548,6 +550,9 @@ bool ReconsiderBlock(CValidationState& state, CBlockIndex *pindex);
 
 /** The currently-connected chain of blocks. */
 extern CChain chainActive;
+
+/** The Anoncoin hardfork manager */
+extern CashIsKing::ANCConsensus ancConsensus;
 
 /** Global variable that points to the active CCoinsView (protected by cs_main) */
 extern CCoinsViewCache *pcoinsTip;
