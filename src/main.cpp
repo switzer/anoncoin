@@ -1330,19 +1330,26 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos)
         return error("%s : Deserialize or I/O error - %s", __func__, e.what());
     }
 
-    // Check the header POW
-    if( !ancConsensus.CheckProofOfWork( block.GetHash(), block.nBits) )
-            return error("ReadBlockFromDisk : Errors in block header");
-
     return true;
 }
 
 bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex)
 {
+
     if (!ReadBlockFromDisk(block, pindex->GetBlockPos()))
         return false;
-    if (block.GetHash() != pindex->GetBlockHash())
-        return error("ReadBlockFromDisk(CBlock&, CBlockIndex*) : GetHash() doesn't match index");
+
+    uint256 hash = block.GetHash();
+
+    // Check the header POW
+    if( !ancConsensus.CheckProofOfWork( block, block.nBits) )
+            return error("ReadBlockFromDisk : Errors in block header");
+
+    if (hash != pindex->GetBlockPowHash())
+    {
+        return error("ReadBlockFromDisk(CBlock&, CBlockIndex*) : GetHash() doesn't match index, (%s vs %s)",
+                        hash.ToString(), pindex->GetBlockPowHash().ToString());
+    }
     return true;
 }
 
@@ -3026,22 +3033,22 @@ bool static LoadBlockIndexDB()
         aHeader.nTime           = pindex->nTime;
         aHeader.nBits           = pindex->nBits;
         aHeader.nNonce          = pindex->nNonce;
+        aHeader.nHeight         = pindex->nHeight;
 
 
         
         //! Calling GetHash & CalcSha256dHash with true, invalidates any previously calculated hashes for this block, as they have changed
-        uintFakeHash aFakeHash  = aHeader.CalcSha256dHash(true);    //! Calculate the sha256d hash, even for the genesis block
+        uintFakeHash aFakeHash  = aHeader.CalcSha256dHash();    //! Calculate the sha256d hash, even for the genesis block
 
         uint256 aRealHash;
-        //aRealHash = aHeader.GetPoWHash(nHeight, true); 
 
         if( fDoubleCheckingHash ) {
-            aRealHash = aHeader.GetPoWHash(nHeight, true);              //! Calc the real scrypt hash of this block.
+            aRealHash = aHeader.GetHash();              //! Calc the real scrypt hash of this block.
             if( nHeight > 100 )                             //! Stop checking if things have been ok after the 1st 100 blocks
                 fDoubleCheckingHash = false;
         } else if( nHeight > nBIsize - 1000 ) {   
                                                                   //! Turn it back on for the last 1000 blocks
-            aRealHash = aHeader.GetPoWHash(nHeight, true);              //! Calc the real scrypt hash of this block.
+            aRealHash = aHeader.GetHash();              //! Calc the real scrypt hash of this block.
         } else {
             aRealHash = entry.uintRealHash;  
         }
@@ -3052,7 +3059,7 @@ bool static LoadBlockIndexDB()
         }
 
         //! Could do a quick check of the nBits to confirm pow here...its fast.
-        if( !ancConsensus.CheckProofOfWork( aRealHash, aHeader.nBits ) )
+        if( !ancConsensus.CheckProofOfWork( aHeader, aHeader.nBits ) )
             return error("%s : CheckProofOfWork failed: %s", __func__, pindex->ToString());
         //LogPrintf( "fakeBIhash: %s aRealHash: %s Gost3411Hash: %s Height=%d\n", aFakeHash.ToString(), aRealHash.ToString(), gost3411Hash.ToString(), nHeight );
         vFakeHashes[nHeight++] = aFakeHash; //! Save it for later on the 2nd pass
@@ -3279,17 +3286,27 @@ bool VerifyDB(int nCheckLevel, int nCheckDepth)
         // check level 3: check for inconsistencies during memory-only disconnect of tip blocks
         if (nCheckLevel >= 3 && pindex == pindexState && (coins.GetCacheSize() + pcoinsTip->GetCacheSize()) <= 2*nCoinCacheSize + 32000) {
             
-#ifdef CPP11
-            auto checkPowVal = GetNextWorkRequired(pindex->pprev, &block);
-            auto difference = block.nBits - checkPowVal;
-            if (block.nBits < checkPowVal) {
-                difference = checkPowVal - block.nBits;
+            uint256 blockHash = block.CalcSha256dHash();
+            int blockHeight = pindex->nHeight;
+            uint32_t checkPowVal = GetNextWorkRequired(pindex->pprev, &block);
+            uint32_t difference = (checkPowVal > block.nBits) ? checkPowVal - block.nBits : block.nBits - checkPowVal;
+     
+            if (!Checkpoints::IsBlockInCheckpoints(blockHeight)) {
+                if (block.nBits != checkPowVal && !TestNet()) {
+
+                    #ifdef __APPLE__
+                        if (!((blockHeight > ancConsensus.nDifficultySwitchHeight4 && blockHeight < ancConsensus.nDifficultySwitchHeight5) || difference < 32768)) {
+                            LogPrintf("Block %d is wrong %d with diff %d \n",blockHeight,blockHash.ToString(), difference);
+                        }
+                    #else
+                        LogPrintf("Block %d is wrong %d with diff %d \n",blockHeight,blockHash.ToString(), difference);
+                    #endif    
+                }
             }
-            //LogPrintf("BEFORE  BNB nbits: %s - checkPowVal: %s for HEIGHT:    %d. \n", strprintf( "0x%08x",block.nBits), strprintf( "0x%08x",checkPowVal),pindex->nHeight);
-            if (block.nBits != checkPowVal ) {
-                LogPrintf("## ERROR BLOCK - BNB nbits: %s - checkPowVal: %s with diff: %s for HEIGHT:    %d. \n", strprintf( "0x%08x",block.nBits), strprintf( "0x%08x",checkPowVal),difference,pindex->nHeight);
+            else {
+                LogPrintf("Block %d in checkpoints, skipping... \n",blockHeight);   
             }
-#endif
+
             
             bool fClean = true;
             if (!DisconnectBlock(block, state, pindex, coins, &fClean))

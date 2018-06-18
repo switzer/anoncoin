@@ -15,15 +15,27 @@
 namespace CashIsKing
 {
 
-ANCConsensus::ANCConsensus()
-{
-  bShouldDebugLogPoW = GetBoolArg("-extrapowdebug", false);
-}
+
+//! Difficulty Protocols have changed over the years, at specific points in Anoncoin's history the following SwitchHeight values are those blocks
+//! where an event occurred which required changing the way things are calculated. aka HARDFORK
+const int32_t ANCConsensus::nDifficultySwitchHeight1 = 15420;   // Protocol 1 happened here
+const int32_t ANCConsensus::nDifficultySwitchHeight2 = 77777;  // Protocol 2 starts at this block
+const int32_t ANCConsensus::nDifficultySwitchHeight3 = 87777;  // Protocol 3 began the KGW era
+const int32_t ANCConsensus::nDifficultySwitchHeight4 = 555555;
+const int32_t ANCConsensus::nDifficultySwitchHeight5 = 585555;
+#ifdef NEXT_HARDFORK_BLOCK
+int32_t ANCConsensus::nDifficultySwitchHeight6 = NEXT_HARDFORK_BLOCK;
+#else
+// MAINNET
+int32_t ANCConsensus::nDifficultySwitchHeight6 = 900000;
+#endif
+const int32_t ANCConsensus::nDifficultySwitchHeight7 = -1; // The next era
+
 
 /**
  * The primary routine which verifies a blocks claim of Proof Of Work
  */
-bool ANCConsensus::CheckProofOfWork(const uint256& hash, unsigned int nBits)
+bool ANCConsensus::CheckProofOfWork(const CBlockHeader& pBlockHeader, unsigned int nBits)
 {
   bool fNegative;
   bool fOverflow;
@@ -31,25 +43,15 @@ bool ANCConsensus::CheckProofOfWork(const uint256& hash, unsigned int nBits)
 
   bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
 
-  CBlockIndex *tip = chainActive.Tip();
-  bool fStartedUsingGost3411 = false;
-  if (tip)
-  {
-    int32_t nHeight = tip->nHeight;
-    if (nHeight >= nDifficultySwitchHeight6)
-    {
-      fStartedUsingGost3411 = true;
-    }
-  }
-
   const uint256 proofOfWorkLimit = 
-      (fStartedUsingGost3411) ? 
+      (pBlockHeader.nHeight >= unsigned(nDifficultySwitchHeight6) ) ?
         Params().ProofOfWorkLimit( CChainParams::ALGO_GOST3411 ) 
         : Params().ProofOfWorkLimit( CChainParams::ALGO_SCRYPT );
 
+  uint256 hash = pBlockHeader.GetHash();
   //! Check range of the Target Difficulty value stored in a block
   if( fNegative || bnTarget == 0 || fOverflow || bnTarget > proofOfWorkLimit )
-    return error("CheckProofOfWorkGost3411() : nBits below minimum work");
+    return error("CheckProofOfWork() : nBits below minimum work (0x%s / %s)", proofOfWorkLimit.ToString(), strprintf( "0x%08x",proofOfWorkLimit.GetCompact()));
 
   //! Check the proof of work matches claimed amount
   if (hash > bnTarget) {
@@ -63,7 +65,7 @@ bool ANCConsensus::CheckProofOfWork(const uint256& hash, unsigned int nBits)
       LogPrintf( "%s : Failed. ", __func__ );
       if( fTestNet ) LogPrintf( "StartingDiff=0x%s ", uintStartingDiff.ToString() );
       LogPrintf( "Target=0x%s hash=0x%s\n", bnTarget.ToString(), hash.ToString() );
-      return error("CheckProofOfWorkGost3411() : hash doesn't match nBits");
+      return error("CheckProofOfWork() : hash doesn't match nBits (0x%s)", uint256().SetCompact(nBits).ToString() );
     }
   }
 
@@ -81,7 +83,7 @@ bool ANCConsensus::SkipPoWCheck()
 
 bool ANCConsensus::CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool fCheckPOW)
 {
-  if (fCheckPOW)
+  if (fCheckPOW && !TestNet())
     fCheckPOW = SkipPoWCheck();
   if (!fCheckPOW)
   {
@@ -89,8 +91,8 @@ bool ANCConsensus::CheckBlockHeader(const CBlockHeader& block, CValidationState&
   }
   // Check proof of work matches claimed amount
   uint256 hash = GetPoWHashForThisBlock(block);
-  if (fCheckPOW && !CheckProofOfWork(hash, block.nBits))
-    return state.DoS(50, error("CheckBlockHeader() : proof of work failed"), REJECT_INVALID, "high-hash");
+  if (fCheckPOW && !CheckProofOfWork(block, block.nBits))
+    return state.DoS(50, error("CheckBlockHeader() : proof of work failed (%s)", hash.ToString()), REJECT_INVALID, "high-hash");
 
   // Check timestamp, for Anoncoin we make that less than 2hrs after the hardfork,
   // no mined block time need have a future time so large.  In fact the header can
@@ -134,18 +136,26 @@ bool ANCConsensus::ContextualCheckBlockHeader(const CBlockHeader& block, CValida
     if (nHeight < ancConsensus.nDifficultySwitchHeight4 && !TestNet())
         return true;
 
-    if (!Checkpoints::IsBlockInCheckpoints(nHeight) && (nHeight > pcheckpoint->nHeight+100) )
-    {
-        // Check proof of work
+    // Checking PoW for blocks not in checkpoints
+    if (!Checkpoints::IsBlockInCheckpoints(nHeight)) {
         uint32_t checkPowVal = GetNextWorkRequired(pindexPrev, &block);
-        if (block.nBits != checkPowVal ) {
-            if ( (!TestNet() || pindexPrev->nHeight > pRetargetPid->GetTipFilterBlocks() ) && (nHeight < ancConsensus.nDifficultySwitchHeight4 || nHeight > ancConsensus.nDifficultySwitchHeight5) ) {
-                LogPrintf("Block's nBits are %s versus %s which is required for block height %d.", strprintf( "0x%08x",block.nBits), strprintf( "0x%08x",checkPowVal),nHeight);
-                LogPrintf("\n(%d, uint256(\"0x%s\"))\n", nHeight, block.GetPoWHash(nHeight,true).ToString());
+        if (block.nBits != checkPowVal && !TestNet()) {
+            #ifdef __APPLE__
+            uint32_t maxDiff = 32768;
+            uint32_t difference = (checkPowVal > block.nBits) ? checkPowVal - block.nBits : block.nBits - checkPowVal;
+            if (!((nHeight > ancConsensus.nDifficultySwitchHeight4 && nHeight < ancConsensus.nDifficultySwitchHeight5) || difference < maxDiff)) {
                 return state.Invalid(error("%s : incorrect proof of work", __func__), REJECT_INVALID, "bad-diffbits");
             }
-        }
+            #else
+            return state.Invalid(error("%s : incorrect proof of work", __func__), REJECT_INVALID, "bad-diffbits"); 
+            #endif  
+        }         
     }
+    else {
+        LogPrintf("Block %d in checkpoints, skipping PoW check... \n",nHeight);   
+    }
+
+
 
     // Check timestamp against prev
     if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
@@ -157,6 +167,9 @@ bool ANCConsensus::ContextualCheckBlockHeader(const CBlockHeader& block, CValida
     // set to always return false.  As of 3/15/2015 in the last 10000 blocks over 700 where version 1 blocks
     if( block.nVersion < 2 && nHeight > ancConsensus.nDifficultySwitchHeight4 )                // We'll start enforcing the new rule
         return state.Invalid(error("%s : rejected nVersion=1 block", __func__), REJECT_OBSOLETE, "bad-version");
+
+    if( block.nVersion < 3 && nHeight > ancConsensus.nDifficultySwitchHeight6 )                // We'll start enforcing the new rule
+        return state.Invalid(error("%s : rejected nVersion=2 block", __func__), REJECT_OBSOLETE, "bad-version");
 
     return true;
 }
@@ -176,9 +189,7 @@ void ANCConsensus::getMainnetStrategy(const CBlockIndex* pindexLast, const CBloc
     {
       //LogPrintf("NextWorkRequiredKgwV2 selected\n");
       uintResult = NextWorkRequiredKgwV2(pindexLast);     //! Use fast v2 KGW calculator
-    }
-    else if ( pindexLast->nHeight >= nDifficultySwitchHeight6 )
-    {
+    } else if ( pindexLast->nHeight >= nDifficultySwitchHeight6 ) {
       uintResult = NextWorkRequiredKgwV2(pindexLast);     //! Use fast v2 KGW calculator
     }
   } else {
@@ -425,24 +436,7 @@ uint256 ANCConsensus::GetBlockProof(const ::CBlockIndex& block)
   bool fOverflow;
 
   bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
-  if (IsUsingGost3411Hash()) {
-    //
-  }
   return (!fNegative && !fOverflow) ? GetWorkProof( bnTarget ) : ::uint256(0);
 }
-
-//! Difficulty Protocols have changed over the years, at specific points in Anoncoin's history the following SwitchHeight values are those blocks
-//! where an event occurred which required changing the way things are calculated. aka HARDFORK
-const int32_t ANCConsensus::nDifficultySwitchHeight1 = 15420;   // Protocol 1 happened here
-const int32_t ANCConsensus::nDifficultySwitchHeight2 = 77777;  // Protocol 2 starts at this block
-const int32_t ANCConsensus::nDifficultySwitchHeight3 = 87777;  // Protocol 3 began the KGW era
-const int32_t ANCConsensus::nDifficultySwitchHeight4 = 555555;
-const int32_t ANCConsensus::nDifficultySwitchHeight5 = 585555;
-#ifdef NEXT_HARDFORK_BLOCK
-const int32_t ANCConsensus::nDifficultySwitchHeight6 = NEXT_HARDFORK_BLOCK;
-#else
-const int32_t ANCConsensus::nDifficultySwitchHeight6 = 900000;
-#endif
-const int32_t ANCConsensus::nDifficultySwitchHeight7 = -1; // The next era
 
 } // End namespace CashIsKing

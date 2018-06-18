@@ -100,7 +100,7 @@ public:
     uintFakeHash fakeBIhash;
 
     // The new GOST3411 Hash
-    uintGost3411Hash gost3411Hash;
+    uint256 gost3411Hash;
 
     //! pointer to the hash of the block, This is in the mapBlockIndex and based on the real POW. memory is owned by this CBlockIndex
     const uint256* phashBlock;
@@ -219,6 +219,7 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
+        block.nHeight        = nHeight;
         return block;
     }
 
@@ -233,10 +234,11 @@ public:
         block.nTime           = nTime;
         block.nBits           = nBits;
         block.nNonce          = nNonce;
-        return block.GetPoWHash(nHeight);
+        block.nHeight        = nHeight;
+        return block.GetHash();
     }
 
-    uint256 GetBlockSha256dHash() const
+    uintFakeHash GetBlockSha256dHash() const
     {
         return fakeBIhash;
     }
@@ -422,7 +424,7 @@ public:
     }
 
     inline bool UseGost3411Hash() {
-        return Tip()->nHeight >= HARDFORK_BLOCK3;
+        return ancConsensus.IsUsingGost3411Hash();
     }
 
     /** Set/initialize a chain with a given tip. */

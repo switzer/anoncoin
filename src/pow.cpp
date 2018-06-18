@@ -538,7 +538,7 @@ CRetargetPidController::CRetargetPidController( const double dProportionalGainIn
     nIntegratorHeight = nIndexFilterHeight = 0;
     nLastCalculationTime = 0;
     nBlocksSampled = 0;
-    uintTestNetStartingDifficulty = Params().ProofOfWorkLimit( CChainParams::ALGO_SCRYPT );
+    uintTestNetStartingDifficulty = Params().ProofOfWorkLimit( CChainParams::ALGO_GOST3411 );
     if( isMainNetwork() ) {
         nTipFilterBlocks = atoi( TIPFILTERBLOCKS_DEFAULT );
         fUsesHeader = USESHEADER_DEFAULT;
@@ -818,6 +818,9 @@ bool CRetargetPidController::UpdateIndexTipFilter( const CBlockIndex* pIndex )
     if( pIndex->nHeight < nTipFilterBlocks )
         return false;
 
+
+
+
     //! This matters if fUsesHeader has been turned on.
     //! Make sure to force a new block spacing error calculation next time GetNextWorkRequired is run.
     //! Otherwise what could happen is the most recent results may only 'appear' to have been set correctly.
@@ -838,9 +841,9 @@ bool CRetargetPidController::UpdateIndexTipFilter( const CBlockIndex* pIndex )
     // bool fDiffPrevFromHash = GetBoolArg( "-retargetpid.diffprevfromhash", false );
     FilterPoint aFilterPoint;
     const CBlockIndex* pIndexSearch = pIndex;
+
     for( int32_t i = nTipFilterBlocks - 1; i >= 0  && pIndexSearch; i--, pIndexSearch = pIndexSearch->pprev ) {
         aFilterPoint.nBlockTime = pIndexSearch->GetBlockTime();
-        aFilterPoint.nHeight = pIndexSearch->nHeight;
         // aFilterPoint.nDiffBits = fDiffPrevFromHash ? pIndexSearch->GetBlockHash() : pIndexSearch->nBits;
         aFilterPoint.nDiffBits = pIndexSearch->nBits;
         aFilterPoint.nSpacing = aFilterPoint.nSpacingError = aFilterPoint.nRateOfChange = 0;
@@ -849,19 +852,8 @@ bool CRetargetPidController::UpdateIndexTipFilter( const CBlockIndex* pIndex )
 
     //! Sort the TipFilter block data by time.  The result is then setup as an output vector of structures
     //! containing all the filter information which can be accessed and referenced as needed.
-    assert( vIndexTipFilter.size() == static_cast<unsigned long>(nTipFilterBlocks) );            //! The array of strutures is constant in size and assumed.
-    
-    std::reverse(vIndexTipFilter.begin(), vIndexTipFilter.end());
-    sort(vIndexTipFilter.begin(), vIndexTipFilter.end(), [](const FilterPoint&a,const FilterPoint&b){
-        // Magic
-        if (a.nBlockTime == b.nBlockTime)
-        {
-            return a.nHeight < b.nHeight;
-        }
-        return a.nBlockTime < b.nBlockTime;
-    });
-    //stable_sort(vIndexTipFilter.begin(), vIndexTipFilter.end());
-    //! Thank you sort routine, now it matters not the time order in which the blocks were mined
+    assert( vIndexTipFilter.size() == static_cast<unsigned long>(nTipFilterBlocks) );            //! The array of strutures is constant in size and assumed. 
+    sort(vIndexTipFilter.begin(), vIndexTipFilter.end());
     uint32_t nDividerSum = 0;
     uint256 uintBlockPOW;
     uintPrevDiffCalculated.SetNull();
@@ -922,7 +914,7 @@ bool CRetargetPidController::UpdateIndexTipFilter( const CBlockIndex* pIndex )
     }
 
     if (nMaxDiffIncrease <= 101 ) {
-        LogPrintf("Error: nMaxDiffIncrease <= 101, DiffAtMaxIncrease is set to * 1.01 \n");
+        LogPrintf("Warning: nMaxDiffIncrease <= 101, DiffAtMaxIncrease is set to * 1.01 \n");
         nMaxDiffIncrease = 101;
     }
     uintPrevDiffForLimitsIncreaseLast = uintPrevDiffForLimitsLast * 100; //For a quick increase of difficulty, let's take the previous block diff
@@ -934,7 +926,7 @@ bool CRetargetPidController::UpdateIndexTipFilter( const CBlockIndex* pIndex )
     // The minimum value for the difficulty retarget limits is thus set to 101% which is equivalent to a 1.01 multiplier or divider.
 
     if (nMaxDiffDecrease <= 101 ) {
-        LogPrintf("Error: nMaxDiffDecrease <= 101, DiffAtMaxDecrease is set to / 1.01 \n");
+        LogPrintf("Warning: nMaxDiffDecrease <= 101, DiffAtMaxDecrease is set to / 1.01 \n");
         nMaxDiffDecrease = 101;
     }
     

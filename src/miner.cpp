@@ -11,6 +11,8 @@
 
 #include "miner.h"
 
+#include <string>
+
 #include "amount.h"
 #include "block.h"
 #include "chainparams.h"
@@ -344,15 +346,16 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
         pblocktemplate->vTxFees[0] = -nFees;
 
         // Fill in header
-        pblock->hashPrevBlock  = pindexPrev->GetBlockSha256dHash();             // Make sure it places the sha256d hash of the previous block into this new one.
+        // Make sure it places the sha256d hash of the previous block into this new one.
+        pblock->hashPrevBlock  = pindexPrev->GetBlockSha256dHash();
         UpdateTime(pblock, pindexPrev);
-        pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock);
+        pblock->nBits          = ancConsensus.GetNextWorkRequired(pindexPrev, pblock);
         pblock->nNonce         = 0;
         pblocktemplate->vTxSigOps[0] = GetLegacySigOpCount(pblock->vtx[0]);
 
         //! Force both hash calculations to be updated before validity testing the block
-        assert( pblock->GetHash(true) != uint256(0) );
-        assert( pblock->CalcSha256dHash(true) != uintFakeHash(0) );
+        assert( pblock->GetHash() != uint256(0) );
+        assert( pblock->CalcSha256dHash() != uintFakeHash(0) );
         assert( pblock->GetGost3411Hash() != uint256(0) );
         CValidationState state;
         if (!TestBlockValidity(state, *pblock, pindexPrev, false, false))
@@ -382,7 +385,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
 }
 
 
-#ifdef ENABLE_WALLET
+//#ifdef ENABLE_WALLET
 //////////////////////////////////////////////////////////////////////////////
 //
 // Internal miner
@@ -405,7 +408,7 @@ bool ProcessBlockFound(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     // Found a solution
     {
         LOCK(cs_main);
-        if (pblock->hashPrevBlock != chainActive.Tip()->GetBlockSha256dHash())
+        if (pblock->hashPrevBlock != chainActive.Tip()->GetBlockSha256dHash() )
             return error("AnoncoinMiner : generated block is stale");
     }
 
@@ -704,7 +707,7 @@ double GetSlowMiningKHPS()
 
 void static AnoncoinMiner(CWallet *pwallet)
 {
-    LogPrintf("%s : v3.0 for GOST3411 started with (DDA) Dynamic Difficulty Awareness and (MTHM) Multi-Threaded HashMeter technologies.\n", __func__ );
+    LogPrintf("%s : v3.0 for Scrypt/GOST3411 started with (DDA) Dynamic Difficulty Awareness and (MTHM) Multi-Threaded HashMeter technologies.\n", __func__ );
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
     RenameThread("anoncoin-miner");
 
@@ -733,12 +736,12 @@ void static AnoncoinMiner(CWallet *pwallet)
 
     try {
         while (true) {
-            if (!RegTest()) {
+            /*if (!RegTest()) {
                 //! Busy-wait for the network to come online so we don't waste time mining
                 //! on an obsolete chain. In regtest mode we expect to fly solo.
                 while (vNodes.empty())
                     MilliSleep(10000);
-            }
+            }*/
 
             /**
              * Create new block
@@ -764,6 +767,13 @@ void static AnoncoinMiner(CWallet *pwallet)
             int64_t nStart = GetTime();
             uint256 hashTarget;
             hashTarget.SetCompact(pblock->nBits);
+            if (pindexPrev->nHeight+1 == ancConsensus.nDifficultySwitchHeight6)
+            {
+                hashTarget.SetCompact(0x1e0eb9a7);
+                pblock->nBits = hashTarget.GetCompact();
+                LogPrintf("Set GOST3411 target to: %s\n", hashTarget.ToString());
+            }
+            std::string powHashType = "scrypt";
             while( true ) {
                 bool fFound = false;
                 bool fAccepted = false;
@@ -771,13 +781,15 @@ void static AnoncoinMiner(CWallet *pwallet)
                 uint256 thash;
                 //! Scan nonces looking for a solution
                 while(true) {
-                    // scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), pScratchPadBuffer);
-                    //char *pPad = spScratchPad.get();
-                    if (chainActive.UseGost3411Hash())
+                    if (pindexPrev->nHeight+1 >= ancConsensus.nDifficultySwitchHeight6)
                     {
-                        thash = SerializeGost3411Hash(*pblock, SER_NETWORK, PROTOCOL_VERSION);
+                        thash = HashGOST(BEGIN(pblock->nVersion), END(pblock->nNonce));
+                        pblock->nVersion = 3;
+                        pblock->nHeight  = pindexPrev->nHeight+1;
+                        powHashType = "gost3411";
                     } else {
                         scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), spScratchPad.get());
+                        pblock->nVersion = 2;
                     }
                     nHashesDone++;
                     if( thash <= hashTarget ) {
@@ -786,12 +798,12 @@ void static AnoncoinMiner(CWallet *pwallet)
                         //! Found a solution
                         //! Force new proof-of-work block scrypt hash and the sha256d hash values to be calculated.
                         //! Calling GetHash() & CalcSha256dHash() with true invalidates any previous (and obsolete) ones.
-                        assert( thash == pblock->GetHash(true) );
+                        assert( thash == pblock->GetHash() );
                         //! Basically this next line does the Scrypt calculation again once, then all the normal
                         //! validation code kicks in from the call to ProcessBlockFound(), insuring that is the case...
-                        assert( pblock->CalcSha256dHash(true) != uintFakeHash(0) );
+                        assert( pblock->CalcSha256dHash() != uintFakeHash(0) );
                         LogPrintf("%s %2d:\n", __func__, nMyID );
-                        LogPrintf("proof-of-work found  \n  hash: %s  \ntarget: %s\n", thash.GetHex(), hashTarget.GetHex());
+                        LogPrintf("proof-of-work found (%s)  \n  hash: %s  \ntarget: %s\n", powHashType.c_str(), thash.GetHex(), hashTarget.GetHex());
                         fAccepted = ProcessBlockFound(pblock, *pwallet, reservekey);
                         SetThreadPriority(THREAD_PRIORITY_LOWEST);
 
@@ -872,7 +884,7 @@ void static AnoncoinMiner(CWallet *pwallet)
                 //! Changing pblock->nTime effects the work required for Anoncoin if the blockheader time is used for PID calculations,
                 //! otherwise it does not.  No older generation of the NextWorkRequired will be effected by time change.
                 UpdateTime(pblock, pindexPrev);
-                pblock->nBits = GetNextWorkRequired(pindexPrev, pblock);
+                pblock->nBits = ancConsensus.GetNextWorkRequired(pindexPrev, pblock);
                 hashTarget.SetCompact(pblock->nBits);
             } // Looping forever while true and no nonce overflow, transactions updated or new blocks arrived
         } // Looping forever while true in this thread
@@ -933,7 +945,7 @@ void GenerateAnoncoins(bool fGenerate, CWallet* pwallet, int nThreads)
         minerThreads->create_thread(boost::bind(&AnoncoinMiner, pwallet));
 }
 
-#endif // ENABLE_WALLET
+//#endif // ENABLE_WALLET
 
 /**
  * Scrypt mining related code for block creation

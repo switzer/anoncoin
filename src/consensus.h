@@ -37,7 +37,6 @@ private:
   bool SkipPoWCheck();
 
 public:
-  ANCConsensus();
 
   uint256 GetPoWRequiredForNextBlock();
   uint256 GetPoWHashForThisBlock(const CBlockHeader& block);
@@ -55,7 +54,7 @@ public:
 
   uint256 GetWorkProof(const uint256& uintTarget);
   //! Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
-  bool CheckProofOfWork(const uint256& hash, unsigned int nBits);
+  bool CheckProofOfWork(const CBlockHeader& pBlockHeader, unsigned int nBits);
 
   unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader* pBlockHeader);
   uint256 OriginalGetNextWorkRequired(const CBlockIndex* pindexLast);
@@ -69,7 +68,8 @@ public:
   static const int32_t nDifficultySwitchHeight3;  // Protocol 3 began the KGW era
   static const int32_t nDifficultySwitchHeight4;
   static const int32_t nDifficultySwitchHeight5;
-  static const int32_t nDifficultySwitchHeight6;
+  // const is temporary removed to let testnet trigger a hardfork before mainnet.
+  static int32_t nDifficultySwitchHeight6;
   static const int32_t nDifficultySwitchHeight7;
 
 #ifdef CPP11

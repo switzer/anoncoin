@@ -36,17 +36,6 @@ public:
     void SetRealHash( const uint256& realHash );
 };
 
-class uintGost3411Hash : public uint256
-{
-public:
-    uintGost3411Hash() {}
-    uintGost3411Hash(uint64_t b) : uint256(b) {}
-    uintGost3411Hash( const uint256& hashin ) : uint256( hashin) {}
-    // uintGost3411Hash( uint256& hashin ) : uint256( hashin) {}
-    uint256 GetGost3411Hash() const;
-    void SetGost3411Hash( const uint256& gostHash );
-};
-
 struct BlockHashCorrector
 {
     size_t operator()(const uint256& fakehash) const { return fakehash.GetLow64(); }
@@ -69,19 +58,18 @@ private:
     mutable bool fCalcSha256d;
 //    mutable bool fCalcGost3411;
     mutable uint256 therealHash;
-    mutable uintGost3411Hash gost3411Hash;
     mutable uintFakeHash sha256dHash;
 
 public:
     // header
-    static const int32_t CURRENT_VERSION=2;
+    static const int32_t CURRENT_VERSION=3;
     int32_t nVersion;
     uintFakeHash hashPrevBlock;
-//    uintGost3411Hash hashGostPrevBlock;
     uint256 hashMerkleRoot;
     uint32_t nTime;
     uint32_t nBits;
     uint32_t nNonce;
+    uint32_t nHeight;
 
     CBlockHeader()
     {
@@ -100,6 +88,10 @@ public:
         }
         READWRITE(this->nVersion);
         nVersion = this->nVersion;
+        if (nVersion >= 3)
+        {
+            READWRITE(nHeight);
+        }
         READWRITE(hashPrevBlock);
         READWRITE(hashMerkleRoot);
         READWRITE(nTime);
@@ -115,6 +107,7 @@ public:
         nTime = 0;
         nBits = 0;
         nNonce = 0;
+        nHeight = 0;
         fCalcScrypt   = false;
         fCalcSha256d  = false;
 //        fCalcGost3411 = false;
@@ -125,21 +118,21 @@ public:
         return (nBits == 0);
     }
 
-    uintFakeHash CalcSha256dHash( const bool fForceUpdate = true ) const;
-    uint256 GetHash( const bool fForceUpdate = false ) const;
-    uint256 GetGost3411Hash() const;
+    uintFakeHash CalcSha256dHash() const; // Gives SHA256 Hash
+    uint256 GetHash() const; // Gives correct PoW hash
+    uint256 GetGost3411Hash() const; // Gives Gost hash
+    uint256 GetScryptHash() const; // Gives Scrypt hash
 
-    inline uint256 GetPoWHash(uint32_t nHeight, const bool fForceUpdate = true) const
+    inline uintFakeHash GetFakeHash() const
     {
-        if (nHeight < HARDFORK_BLOCK3)
-            return GetHash(fForceUpdate);
-        return GetGost3411Hash();
+        return sha256dHash;
     }
 
     int64_t GetBlockTime() const
     {
         return (int64_t)nTime;
     }
+
 };
 
 
@@ -187,6 +180,10 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
+        if (block.nVersion >= 3)
+        {
+            block.nHeight    = nHeight;
+        }
         return block;
     }
 
