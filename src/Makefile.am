@@ -21,7 +21,7 @@ $(LIBLEVELDB) $(LIBMEMENV):
           OPT="$(CXXFLAGS) $(CPPFLAGS)"
 endif
 
-BOOST_CPPFLAGS += -DBOOST_VARIANT_USE_RELAXED_GET_BY_DEFAULT
+BOOST_CPPFLAGS += -DBOOST_VARIANT_USE_RELAXED_GET_BY_DEFAULT -DBOOST_SPIRIT_THREADSAFE -DBOOST_NO_CXX11_SCOPED_ENUMS -DBOOST_ASIO_ENABLE_OLD_SERVICES
 
 ANONCOIN_CONFIG_INCLUDES=-I$(builddir)/config
 ANONCOIN_INCLUDES=-I$(builddir) -I$(builddir)/obj $(BOOST_CPPFLAGS) $(LEVELDB_CPPFLAGS) $(CRYPTO_CFLAGS) $(SSL_CFLAGS)
@@ -244,6 +244,7 @@ libanoncoin_common_a_SOURCES = \
   base58.cpp \
   chainparams.cpp \
   coins.cpp \
+  chain.cpp \
   compressor.cpp \
   consensus.cpp \
   core_read.cpp \
