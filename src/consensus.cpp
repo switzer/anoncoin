@@ -90,7 +90,7 @@ bool ANCConsensus::CheckBlockHeader(const CBlockHeader& block, CValidationState&
     return true;
   }
   // Check proof of work matches claimed amount
-  uint256 hash = GetPoWHashForThisBlock(block);
+  uint256 hash = block.GetHash();
   if (fCheckPOW && !CheckProofOfWork(block, block.nBits))
     return state.DoS(50, error("CheckBlockHeader() : proof of work failed (%s)", hash.ToString()), REJECT_INVALID, "high-hash");
 
@@ -231,10 +231,13 @@ unsigned int ANCConsensus::GetNextWorkRequired(const CBlockIndex* pindexLast, co
     //! Based on height, perhaps during a blockchain initial load, other older algos will need to
     //! be run, and their result returned.  That is detected below and processed accordingly.
     {
-      LOCK( cs_retargetpid );
-      if( !pRetargetPid->UpdateOutput( pindexLast, pBlockHeader) )
-        LogPrint( "retarget", "Insufficient BlockIndex, unable to set RetargetPID output values.\n");
-      uintResult = pRetargetPid->GetRetargetOutput(); //! Always returns a limit checked valid result
+      if (pindexLast->nHeight < nDifficultySwitchHeight6)
+      {
+        LOCK( cs_retargetpid );
+        if( !pRetargetPid->UpdateOutput( pindexLast, pBlockHeader) )
+          LogPrint( "retarget", "Insufficient BlockIndex, unable to set RetargetPID output values.\n");
+        uintResult = pRetargetPid->GetRetargetOutput(); //! Always returns a limit checked valid result
+      }
       //LogPrintf("pRetargetPid->GetRetargetOutput() selected\n");
     }
   } else {
@@ -392,7 +395,7 @@ bool ANCConsensus::IsUsingGost3411Hash()
  * */
 uint256 ANCConsensus::GetPoWHashForThisBlock(const CBlockHeader& block)
 {
-  if (IsUsingGost3411Hash())
+  if (signed(block.nHeight) >= nDifficultySwitchHeight6)
   {
     return block.GetGost3411Hash();
   } else {

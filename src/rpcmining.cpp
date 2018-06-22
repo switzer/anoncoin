@@ -1146,7 +1146,7 @@ Value getwork(const Array& params, bool fHelp)
         CMutableTransaction coinbaseTx = pblock->vtx[0];
         std::vector<uint256> merkle = pblock->GetMerkleBranch(0);
 
-        CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+        CDataStream ssTx(SER_MINING, PROTOCOL_VERSION);
         ssTx << coinbaseTx;
         result.push_back(Pair("coinbase", HexStr(ssTx.begin(), ssTx.end())));
 
@@ -1181,7 +1181,7 @@ Value getwork(const Array& params, bool fHelp)
         //! CBlock class structure than, assumption was no longer valid and the following replaces it with 'no' such assumption made.
         //! And with much better exception handling, if there was a problem with the string that as yet gone undetected.
         CBlockHeader aBlockHeader;
-        CDataStream ssBlock(vchData, SER_NETWORK, PROTOCOL_VERSION);
+        CDataStream ssBlock(vchData, SER_MINING, PROTOCOL_VERSION);
         try {
             ssBlock >> aBlockHeader;
         }
@@ -1227,7 +1227,6 @@ Value getwork(const Array& params, bool fHelp)
         // Remove the hash so another miner can not submit the same duplicate work
         mapNewBlock.erase(aBlockHeader.hashMerkleRoot);
 
-        //! Calling GetHash with true, invalidates any previously calculated hashes for this block, as they have changed
         uint256 aRealHash = pblock->GetHash();
         LogPrintf("getwork() got hash %s with merkle %s\n", aRealHash.ToString(), pblock->hashMerkleRoot.ToString());
         //! Force both hash calculations to be updated
@@ -1256,6 +1255,9 @@ Value getwork(const Array& params, bool fHelp)
             // Remove key from key pool
             pMiningKey->KeepKey();
             sc.found = true;
+            state = sc.state;
+        } else {
+            return BIP22ValidationResult(state);
         }
 
         if (fBlockPresent)
@@ -1264,19 +1266,15 @@ Value getwork(const Array& params, bool fHelp)
                 return "duplicate-inconclusive";
             return "duplicate";
         }
-        if (fAccepted)
-        {
-            if (!sc.found)
-                return "inconclusive";
-            state = sc.state;
-        }
 
         // Track how many getdata requests this block gets
         {
             LOCK(pwalletMain->cs_wallet);
             pwalletMain->mapRequestCount[pblock->CalcSha256dHash()] = 0;
         }
-        return BIP22ValidationResult(state);
+        Object result;
+        result.push_back(Pair("result", true));
+        return result;
     }
 }
 
