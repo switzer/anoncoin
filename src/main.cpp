@@ -3059,10 +3059,6 @@ bool static LoadBlockIndexDB()
                 StartShutdown();
         }
 
-        //! Could do a quick check of the nBits to confirm pow here...its fast.
-        if( !ancConsensus.CheckProofOfWork( aHeader, aHeader.nBits ) )
-            return error("%s : CheckProofOfWork failed: %s", __func__, pindex->ToString());
-        //LogPrintf( "fakeBIhash: %s aRealHash: %s Gost3411Hash: %s Height=%d\n", aFakeHash.ToString(), aRealHash.ToString(), gost3411Hash.ToString(), nHeight );
         vFakeHashes[nHeight++] = aFakeHash; //! Save it for later on the 2nd pass
         aFakeHash.SetRealHash( aRealHash ); //! Update our cross reference unordered fast hash lookup map
 //      if( GetTime() - nStartTime  > 15 ) {
@@ -3286,29 +3282,6 @@ bool VerifyDB(int nCheckLevel, int nCheckDepth)
         }
         // check level 3: check for inconsistencies during memory-only disconnect of tip blocks
         if (nCheckLevel >= 3 && pindex == pindexState && (coins.GetCacheSize() + pcoinsTip->GetCacheSize()) <= 2*nCoinCacheSize + 32000) {
-            
-            uint256 blockHash = block.CalcSha256dHash();
-            int blockHeight = pindex->nHeight;
-            uint32_t checkPowVal = GetNextWorkRequired(pindex->pprev, &block);
-            uint32_t difference = (checkPowVal > block.nBits) ? checkPowVal - block.nBits : block.nBits - checkPowVal;
-     
-            if (!Checkpoints::IsBlockInCheckpoints(blockHeight)) {
-                if (block.nBits != checkPowVal && !TestNet()) {
-
-                    #ifdef __APPLE__
-                        if (!((blockHeight > ancConsensus.nDifficultySwitchHeight4 && blockHeight < ancConsensus.nDifficultySwitchHeight5) || difference < 32768)) {
-                            LogPrintf("Block %d is wrong %d with diff %d \n",blockHeight,blockHash.ToString(), difference);
-                        }
-                    #else
-                        LogPrintf("Block %d is wrong %d with diff %d \n",blockHeight,blockHash.ToString(), difference);
-                    #endif    
-                }
-            }
-            else {
-                LogPrintf("Block %d in checkpoints, skipping... \n",blockHeight);   
-            }
-
-            
             bool fClean = true;
             if (!DisconnectBlock(block, state, pindex, coins, &fClean))
                 return error("VerifyDB() : *** irrecoverable inconsistency in block data at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
